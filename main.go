@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"strings"
@@ -31,6 +32,7 @@ func handle(conn net.Conn) {
 
 	r := bufio.NewReader(conn)
 
+	// Request line handling
 	line, err := r.ReadString('\n')
 	if err != nil {
 		log.Println("read request line:", err)
@@ -40,21 +42,30 @@ func handle(conn net.Conn) {
 	req, err := parseRequestLine(line)
 	if err != nil {
 		log.Println(err)
+		writeResponse(conn, 400, "text/plain", "Bad Request")
 		return
 	}
 	log.Printf("---REQUEST---\n%v\n---REQUEST---\n", req)
 
+	// Headers handling
 	headers, err := parseHeaders(r)
 	if err != nil {
 		log.Println(err)
+		writeResponse(conn, 400, "text/plain", "Bad Request")
 		return
 	}
 	log.Printf("---HEADERS---\n%v\n---HEADERS---\n", headers)
 
-	body := "Hello, world!"
-	resp := fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s", len(body), body)
-
-	if _, err := conn.Write([]byte(resp)); err != nil {
+	// Determine request type & write response
+	switch req.Target {
+	case "/":
+		err = writeResponse(conn, 200, "text/plain", "Hello, world!")
+	case "/about":
+		err = writeResponse(conn, 200, "text/plain", "About page")
+	default:
+		err = writeResponse(conn, 404, "text/plain", "Not Found")
+	}
+	if err != nil {
 		log.Println("write:", err)
 	}
 }
@@ -104,5 +115,31 @@ func parseHeaders(r *bufio.Reader) (map[string]string, error) {
 		headers[key] = value
 	}
 
-	return nil, fmt.Errorf("too many headers (max %d)", limit)
+	return nil, fmt.Errorf("too many headers (max 100)")
+}
+
+var reasonPhrases = map[int]string{
+	200: "OK",
+	400: "Bad Request",
+	404: "Not Found",
+	500: "Internal Server Error",
+}
+
+func writeResponse(w io.Writer, status int, contentType string, body string) error {
+	phrase, ok := reasonPhrases[status]
+	if !ok {
+		phrase = "Unknown"
+	}
+	
+	lines := []string{
+		fmt.Sprintf("HTTP/1.1 %d %s", status, phrase),
+		fmt.Sprintf("Content-Type: %s", contentType),
+		fmt.Sprintf("Content-Length: %d", len(body)),
+		"Connection: close",
+	}
+	head := strings.Join(lines, "\r\n")
+	resp := head + "\r\n\r\n" + body
+
+	_, err := w.Write([]byte(resp))
+	return err
 }
