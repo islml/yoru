@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"strconv"
 	"strings"
 )
 
@@ -45,7 +46,7 @@ func handle(conn net.Conn) {
 		writeResponse(conn, 400, "text/plain", "Bad Request")
 		return
 	}
-	log.Printf("---REQUEST---\n%v\n---REQUEST---\n", req)
+	log.Printf("\n---REQUEST---\n%v\n---REQUEST---\n", req)
 
 	// Headers handling
 	headers, err := parseHeaders(r)
@@ -54,7 +55,15 @@ func handle(conn net.Conn) {
 		writeResponse(conn, 400, "text/plain", "Bad Request")
 		return
 	}
-	log.Printf("---HEADERS---\n%v\n---HEADERS---\n", headers)
+	log.Printf("\n---HEADERS---\n%v\n---HEADERS---\n", headers)
+
+	// Body handling
+	body, err := parseBody(r, headers)
+	if err != nil {
+		log.Println(err)
+		writeResponse(conn, 400, "text/plain", "Bad Request")
+		return
+	}
 
 	// Determine request type & write response
 	switch req.Target {
@@ -62,6 +71,13 @@ func handle(conn net.Conn) {
 		err = writeResponse(conn, 200, "text/plain", "Hello, world!")
 	case "/about":
 		err = writeResponse(conn, 200, "text/plain", "About page")
+	case "/echo":
+		switch req.Method {
+		case "POST":
+			err = writeResponse(conn, 200, "text/plain", string(body))
+		default:
+			err = writeResponse(conn, 405, "text/plain", "Method Not Allowed")
+		}
 	default:
 		err = writeResponse(conn, 404, "text/plain", "Not Found")
 	}
@@ -122,7 +138,32 @@ var reasonPhrases = map[int]string{
 	200: "OK",
 	400: "Bad Request",
 	404: "Not Found",
+	405: "Method Not Allowed",
+	413: "Payload Too Large",
 	500: "Internal Server Error",
+}
+
+func parseBody(r *bufio.Reader, headers map[string]string) ([]byte, error) {
+	lengthStr, ok := headers["content-length"]
+	if !ok { // No body?
+		return nil, nil
+	}
+	length, err := strconv.Atoi(lengthStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid content length")
+	}
+	if length < 0 {
+		return nil, fmt.Errorf("client sent a negative Content-Length")
+	}
+	if length > 1<<20 { // 1 MB
+		return nil, fmt.Errorf("body too large: %d", length)
+	}
+
+	body := make([]byte, length)
+	if _, err := io.ReadFull(r, body); err != nil {
+		return nil, fmt.Errorf("body shorter than promised: %w", err)
+	}
+	return body, nil
 }
 
 func writeResponse(w io.Writer, status int, contentType string, body string) error {
@@ -130,7 +171,7 @@ func writeResponse(w io.Writer, status int, contentType string, body string) err
 	if !ok {
 		phrase = "Unknown"
 	}
-	
+
 	lines := []string{
 		fmt.Sprintf("HTTP/1.1 %d %s", status, phrase),
 		fmt.Sprintf("Content-Type: %s", contentType),
