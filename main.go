@@ -24,7 +24,7 @@ func main() {
 			log.Println("accept:", err)
 			continue
 		}
-		handle(conn)
+		go handle(conn)
 	}
 }
 
