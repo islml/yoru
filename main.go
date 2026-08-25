@@ -8,6 +8,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func main() {
@@ -16,7 +17,9 @@ func main() {
 		log.Fatal(err)
 	}
 	defer ln.Close()
-	log.Println("listening on :6767")
+
+	log.SetFlags(0)
+	printBanner(":6767")
 
 	for {
 		conn, err := ln.Accept()
@@ -44,6 +47,7 @@ func handle(conn net.Conn) {
 // --- Routing ---
 
 func route(conn net.Conn, req Request) {
+	start := time.Now()
 	handler, ok := routes[req.Target]
 
 	var res Response
@@ -53,7 +57,7 @@ func route(conn net.Conn, req Request) {
 		res = newResponse(404, "Not Found")
 	}
 
-	log.Printf("%s %s -> %d", req.Method, req.Target, res.Status)
+	logRequest(req, res.Status, time.Since(start))
 
 	if err := writeResponse(conn, res); err != nil {
 		log.Println("write:", err)
@@ -239,4 +243,49 @@ func newResponse(status int, body string) Response {
 func writeResponse(w io.Writer, res Response) error {
 	_, err := w.Write(res.Bytes())
 	return err
+}
+
+// --- CLI ---
+
+const banner = `
+ ▄· ▄▌      ▄▄▄  ▄• ▄▌
+▐█▪██▌▪     ▀▄ █·█▪██▌
+▐█▌▐█▪ ▄█▀▄ ▐▀▀▄ █▌▐█▌
+ ▐█▀·.▐█▌.▐▌▐█•█▌▐█▄█▌
+  ▀ •  ▀█▄▀▪.▀  ▀ ▀▀▀ 
+`
+
+const (
+	reset  = "\033[0m"
+	dim    = "\033[90m"
+	green  = "\033[32m"
+	yellow = "\033[33m"
+	red    = "\033[31m"
+	cyan   = "\033[36m"
+)
+
+func printBanner(addr string) {
+	fmt.Print(cyan + banner + reset)
+	fmt.Printf("\n%sserving on%s http://localhost%s\n\n", dim, reset, addr)
+}
+
+func statusColor(status int) string {
+	switch {
+	case status >= 500:
+		return red
+	case status >= 400:
+		return yellow
+	default:
+		return green
+	}
+}
+
+func logRequest(req Request, status int, took time.Duration) {
+	log.Printf("%s%s%s  %s%-6s%s %-24s %s%d%s  %s%s%s",
+		dim, time.Now().Format("15:04:05"), reset,
+		cyan, req.Method, reset,
+		req.Target,
+		statusColor(status), status, reset,
+		dim, took.Round(time.Microsecond), reset,
+	)
 }
