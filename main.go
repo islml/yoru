@@ -266,7 +266,7 @@ const (
 
 func printBanner(addr string) {
 	fmt.Print(cyan + banner + reset)
-	fmt.Printf("\n%sserving on%s http://localhost%s\n\n", dim, reset, addr)
+	fmt.Printf("%sserving on%s http://localhost%s\n\n", dim, reset, addr)
 }
 
 func statusColor(status int) string {
