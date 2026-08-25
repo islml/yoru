@@ -11,12 +11,12 @@ import (
 )
 
 func main() {
-	ln, err := net.Listen("tcp", ":6767")
+	ln, err := net.Listen("tcp", "6767")
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer ln.Close()
-	log.Println("listening on :8080")
+	log.Println("listening on :6767")
 
 	for {
 		conn, err := ln.Accept()
@@ -65,12 +65,17 @@ func handle(conn net.Conn) {
 		return
 	}
 
-	// Determine request type & write response
+	route(conn, req, body)
+}
+
+func route(conn net.Conn, req RequestLine, body []byte) {
+	var err error
+
 	switch req.Target {
 	case "/":
 		err = writeResponse(conn, 200, "text/plain", "Hello, world!")
 	case "/about":
-		err = writeResponse(conn, 200, "text/plain", "About page")
+		err = writeResponse(conn, 200, "text/plain", "About Page")
 	case "/echo":
 		switch req.Method {
 		case "POST":
@@ -81,10 +86,13 @@ func handle(conn net.Conn) {
 	default:
 		err = writeResponse(conn, 404, "text/plain", "Not Found")
 	}
+
 	if err != nil {
 		log.Println("write:", err)
 	}
 }
+
+// --- Request Parsing ---
 
 type RequestLine struct {
 	Method  string
@@ -117,13 +125,13 @@ func parseHeaders(r *bufio.Reader) (map[string]string, error) {
 			return nil, err
 		}
 		line = strings.TrimSuffix(line, "\r\n")
-		if line == "" {
+		if line == "" { // End of headers
 			return headers, nil
 		}
 
 		parts := strings.SplitN(line, ":", 2)
 		if len(parts) == 1 {
-			return nil, fmt.Errorf("malformed line: %q", line)
+			return nil, fmt.Errorf("malformed line in headers: %q", line)
 		}
 
 		key := strings.ToLower(parts[0])
@@ -132,15 +140,6 @@ func parseHeaders(r *bufio.Reader) (map[string]string, error) {
 	}
 
 	return nil, fmt.Errorf("too many headers (max 100)")
-}
-
-var reasonPhrases = map[int]string{
-	200: "OK",
-	400: "Bad Request",
-	404: "Not Found",
-	405: "Method Not Allowed",
-	413: "Payload Too Large",
-	500: "Internal Server Error",
 }
 
 func parseBody(r *bufio.Reader, headers map[string]string) ([]byte, error) {
@@ -164,6 +163,17 @@ func parseBody(r *bufio.Reader, headers map[string]string) ([]byte, error) {
 		return nil, fmt.Errorf("body shorter than promised: %w", err)
 	}
 	return body, nil
+}
+
+// --- Response Writing ---
+
+var reasonPhrases = map[int]string{
+	200: "OK",
+	400: "Bad Request",
+	404: "Not Found",
+	405: "Method Not Allowed",
+	413: "Payload Too Large",
+	500: "Internal Server Error",
 }
 
 func writeResponse(w io.Writer, status int, contentType string, body string) error {
