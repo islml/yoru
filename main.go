@@ -42,25 +42,27 @@ func handle(conn net.Conn) {
 }
 
 func route(conn net.Conn, req Request) {
-	var err error
+	var res Response
 
 	switch req.Target {
 	case "/":
-		err = writeResponse(conn, newResponse(200, "Hello, world!"))
+		res = newResponse(200, "Hello, world!")
 	case "/about":
-		err = writeResponse(conn, newResponse(200, "About Page"))
+		res = newResponse(200, "About Page")
 	case "/echo":
 		switch req.Method {
 		case "POST":
-			err = writeResponse(conn, newResponse(200, string(req.Body)))
+			res = newResponse(200, string(req.Body))
 		default:
-			err = writeResponse(conn, newResponse(405, "Method Now Allowed"))
+			res = newResponse(405, "Method Now Allowed")
 		}
 	default:
-		err = writeResponse(conn, newResponse(404, "Not Found"))
+		res = newResponse(404, "Not Found")
 	}
 
-	if err != nil {
+	log.Printf("%s %s -> %d", req.Method, req.Target, res.Status)
+
+	if err := writeResponse(conn, res); err != nil {
 		log.Println("write:", err)
 	}
 }
