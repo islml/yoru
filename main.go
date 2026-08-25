@@ -41,22 +41,15 @@ func handle(conn net.Conn) {
 	route(conn, req)
 }
 
-func route(conn net.Conn, req Request) {
-	var res Response
+// --- Routing ---
 
-	switch req.Target {
-	case "/":
-		res = newResponse(200, "Hello, world!")
-	case "/about":
-		res = newResponse(200, "About Page")
-	case "/echo":
-		switch req.Method {
-		case "POST":
-			res = newResponse(200, string(req.Body))
-		default:
-			res = newResponse(405, "Method Now Allowed")
-		}
-	default:
+func route(conn net.Conn, req Request) {
+	handler, ok := routes[req.Target]
+
+	var res Response
+	if ok {
+		res = handler(req)
+	} else {
 		res = newResponse(404, "Not Found")
 	}
 
@@ -65,6 +58,29 @@ func route(conn net.Conn, req Request) {
 	if err := writeResponse(conn, res); err != nil {
 		log.Println("write:", err)
 	}
+}
+
+type Handler func(req Request) Response
+
+var routes = map[string]Handler{
+	"/":      homeHandler,
+	"/about": aboutHandler,
+	"/echo":  echoHandler,
+}
+
+func homeHandler(req Request) Response {
+	return newResponse(200, "Hello, world!")
+}
+
+func aboutHandler(req Request) Response {
+	return newResponse(200, "About page")
+}
+
+func echoHandler(req Request) Response {
+	if req.Method != "POST" {
+		return newResponse(405, "Method Not Allowed")
+	}
+	return newResponse(200, string(req.Body))
 }
 
 // --- Request Parsing ---
