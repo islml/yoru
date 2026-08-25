@@ -43,7 +43,7 @@ func handle(conn net.Conn) {
 	req, err := parseRequestLine(line)
 	if err != nil {
 		log.Println(err)
-		writeResponse(conn, 400, "text/plain", "Bad Request")
+		writeResponse(conn, newResponse(400, "Bad Request"))
 		return
 	}
 	log.Printf("\n---REQUEST---\n%v\n---REQUEST---\n", req)
@@ -52,7 +52,7 @@ func handle(conn net.Conn) {
 	headers, err := parseHeaders(r)
 	if err != nil {
 		log.Println(err)
-		writeResponse(conn, 400, "text/plain", "Bad Request")
+		writeResponse(conn, newResponse(400, "Bad Request"))
 		return
 	}
 	log.Printf("\n---HEADERS---\n%v\n---HEADERS---\n", headers)
@@ -61,7 +61,7 @@ func handle(conn net.Conn) {
 	body, err := parseBody(r, headers)
 	if err != nil {
 		log.Println(err)
-		writeResponse(conn, 400, "text/plain", "Bad Request")
+		writeResponse(conn, newResponse(400, "Bad Request"))
 		return
 	}
 
@@ -73,18 +73,18 @@ func route(conn net.Conn, req RequestLine, body []byte) {
 
 	switch req.Target {
 	case "/":
-		err = writeResponse(conn, 200, "text/plain", "Hello, world!")
+		err = writeResponse(conn, newResponse(200, "Hello, world!"))
 	case "/about":
-		err = writeResponse(conn, 200, "text/plain", "About Page")
+		err = writeResponse(conn, newResponse(200, "About Page"))
 	case "/echo":
 		switch req.Method {
 		case "POST":
-			err = writeResponse(conn, 200, "text/plain", string(body))
+			err = writeResponse(conn, newResponse(200, string(body)))
 		default:
-			err = writeResponse(conn, 405, "text/plain", "Method Not Allowed")
+			err = writeResponse(conn, newResponse(405, "Method Now Allowed"))
 		}
 	default:
-		err = writeResponse(conn, 404, "text/plain", "Not Found")
+		err = writeResponse(conn, newResponse(404, "Not Found"))
 	}
 
 	if err != nil {
@@ -176,21 +176,41 @@ var reasonPhrases = map[int]string{
 	500: "Internal Server Error",
 }
 
-func writeResponse(w io.Writer, status int, contentType string, body string) error {
-	phrase, ok := reasonPhrases[status]
+type Response struct {
+	Status  int
+	Headers map[string]string
+	Body    []byte
+}
+
+func (res Response) Bytes() []byte {
+	phrase, ok := reasonPhrases[res.Status]
 	if !ok {
 		phrase = "Unknown"
 	}
 
-	lines := []string{
-		fmt.Sprintf("HTTP/1.1 %d %s", status, phrase),
-		fmt.Sprintf("Content-Type: %s", contentType),
-		fmt.Sprintf("Content-Length: %d", len(body)),
-		"Connection: close",
-	}
-	head := strings.Join(lines, "\r\n")
-	resp := head + "\r\n\r\n" + body
+	head := fmt.Sprintf("HTTP/1.1 %d %s\r\n", res.Status, phrase)
+	head += fmt.Sprintf("Content-Length: %d\r\n", len(res.Body))
 
-	_, err := w.Write([]byte(resp))
+	for key, value := range res.Headers {
+		head += fmt.Sprintf("%s: %s\r\n", key, value)
+	}
+
+	head += "\r\n"
+	return append([]byte(head), res.Body...)
+}
+
+func newResponse(status int, body string) Response {
+	return Response{
+		Status: status,
+		Headers: map[string]string{
+			"Content-Type": "text/plain",
+			"Connection":   "close",
+		},
+		Body: []byte(body),
+	}
+}
+
+func writeResponse(w io.Writer, res Response) error {
+	_, err := w.Write(res.Bytes())
 	return err
 }
