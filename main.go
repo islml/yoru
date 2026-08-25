@@ -31,44 +31,17 @@ func main() {
 func handle(conn net.Conn) {
 	defer conn.Close()
 
-	r := bufio.NewReader(conn)
-
-	// Request line handling
-	line, err := r.ReadString('\n')
-	if err != nil {
-		log.Println("read request line:", err)
-		return
-	}
-	line = strings.TrimSuffix(line, "\r\n")
-	req, err := parseRequestLine(line)
-	if err != nil {
-		log.Println(err)
-		writeResponse(conn, newResponse(400, "Bad Request"))
-		return
-	}
-	log.Printf("\n---REQUEST---\n%v\n---REQUEST---\n", req)
-
-	// Headers handling
-	headers, err := parseHeaders(r)
-	if err != nil {
-		log.Println(err)
-		writeResponse(conn, newResponse(400, "Bad Request"))
-		return
-	}
-	log.Printf("\n---HEADERS---\n%v\n---HEADERS---\n", headers)
-
-	// Body handling
-	body, err := parseBody(r, headers)
+	req, err := parseRequest(bufio.NewReader(conn))
 	if err != nil {
 		log.Println(err)
 		writeResponse(conn, newResponse(400, "Bad Request"))
 		return
 	}
 
-	route(conn, req, body)
+	route(conn, req)
 }
 
-func route(conn net.Conn, req RequestLine, body []byte) {
+func route(conn net.Conn, req Request) {
 	var err error
 
 	switch req.Target {
@@ -79,7 +52,7 @@ func route(conn net.Conn, req RequestLine, body []byte) {
 	case "/echo":
 		switch req.Method {
 		case "POST":
-			err = writeResponse(conn, newResponse(200, string(body)))
+			err = writeResponse(conn, newResponse(200, string(req.Body)))
 		default:
 			err = writeResponse(conn, newResponse(405, "Method Now Allowed"))
 		}
@@ -94,10 +67,45 @@ func route(conn net.Conn, req RequestLine, body []byte) {
 
 // --- Request Parsing ---
 
+type Request struct {
+	RequestLine
+	Headers map[string]string
+	Body    []byte
+}
+
 type RequestLine struct {
 	Method  string
 	Target  string
 	Version string
+}
+
+func parseRequest(r *bufio.Reader) (Request, error) {
+	line, err := r.ReadString('\n')
+	if err != nil {
+		return Request{}, fmt.Errorf("read request line: %w", err)
+	}
+	line = strings.TrimSuffix(line, "\r\n")
+
+	reqLine, err := parseRequestLine(line)
+	if err != nil {
+		return Request{}, err
+	}
+
+	headers, err := parseHeaders(r)
+	if err != nil {
+		return Request{}, err
+	}
+
+	body, err := parseBody(r, headers)
+	if err != nil {
+		return Request{}, err
+	}
+
+	return Request{
+		RequestLine: reqLine,
+		Headers:     headers,
+		Body:        body,
+	}, nil
 }
 
 func parseRequestLine(line string) (RequestLine, error) {
